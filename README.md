@@ -58,7 +58,9 @@ Please note: While Garmin Connect offers a vide range of activity types, the TCX
 4. Click "Import Data". The script will prepare the data in metric units, so you will have to set "Length Units" and "Weight Units" accordingly, even if you normally use British or American units. Garmin Connect will convert the data for you.
 5. Click "Continue" and wait for the magic to happen.
 
-It might be best to import the files by group, e.g. all files starting with `0`, all with `1` etc. This will make it easier for you to know what is done and what is not. In any case, Garmin Connect will check whether an activity has already been imported and will not import it a second time.
+The created TCX files' name always starts with Samsung's activity type, e.g. 1001 for walking or 13001 for hiking. Importing them grouped by type will make it easier for you to adjust the activity type in Garmin Connect, because after the import, you can open all imported activities' details (in new tabs).
+
+Also, it might be best to import the files by group, e.g. all files starting with `0`, all with `1` etc. This will make it easier for you to know what is done and what is not. In any case, Garmin Connect will check whether an activity has already been imported and will not import it a second time.
 
 
 ## Importing sleep data
