@@ -425,6 +425,7 @@ print("Preparing individual TCX files", end="")
 for ex in exercises:
     print(".", end="", flush=True)
     xml = prepare_exercise_data(ex)
-    write_to_file(f"exports/{ex['exercise_type']}-{ex['datauuid']}.tcx", xml)
+    date_code = ex["start_time"][0:10]
+    write_to_file(f"exports/{ex['exercise_type']}_{date_code}_{ex['datauuid']}.tcx", xml)
 
 print("done")
