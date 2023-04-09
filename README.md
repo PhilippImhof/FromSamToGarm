@@ -32,6 +32,8 @@ You can import data on your weight, height and BMI from Samsung Health.
 4. Click "Import Data". The script will prepare the data in metric units, so you will have to set "Length Units" and "Weight Units" accordingly, even if you normally use British or American units. Garmin Connect will convert the data for you.
 5. Click "Continue" and wait for the magic to happen.
 
+Note: You can import your data several times. In this case, existing values will be overwritten.
+
 
 ## Importing general activity data
 
@@ -44,6 +46,8 @@ You can import data on calories burned (resting and active), steps, distance, fl
 5. Click "Continue" and wait for the magic to happen.
 
 Note: There might be some error messages, in extreme casese for the majority of files. Most of the time the import still works. Just check your statistics by clicking "Activities" and then "Steps" in the main navigation. In the "Steps" card, click the "Reports" icon and click on "1 Year". This should make it easy enough for you to check whether the data is plausible. Do this for the floors climbed and calories as well. If you do it for the intensity minutes, please remember what was said above: there will probably be a major difference between Samsung Health and Garmin Connect, because Garmin's intensity minutes are not counted in the same way as Samsung's active minutes.
+
+In case of problems, you can import your data several times. Steps, floors, calories and minutes will not be cumulated in this case. Instead, the most recent import will overwrite existing data.
 
 
 ## Importing activities and exercises
@@ -71,3 +75,8 @@ Sorry, you cannot import sleep data.
 ## Bugs and improvements
 
 Feel free to open an issue or create a pull request on GitHub.
+
+
+## Known Problems
+
+- Sometimes, Garmin Connect will show negative calories for certain days, especially days where no exercise is recorded. A simple (but maybe tedious) way to fix this, is to create a manual activity with 0 calories for the day in question. This will trigger a recalculation. Once that is done, you can either delete the activity or edit it in order to set the date to the next problematic day.
