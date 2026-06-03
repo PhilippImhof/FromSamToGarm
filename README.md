@@ -16,6 +16,38 @@ Finally, you download the three scripts and copy them into the folder where you 
 
 Please check your operating system's documentation to find out how to install Python and how to run scripts.
 
+Install dependencies:
+
+1. `pip install -r requirements.txt`
+
+## One-command run and upload
+
+You can use `main.py` to run all exporters and upload what Garmin Connect's API supports:
+
+1. Runs `weight.py`, `activity.py`, and `exercises.py`.
+2. Uploads generated TCX activity files via Garmin Connect API.
+3. Uploads weight/body composition data via Garmin Connect API.
+
+Example:
+
+1. `python main.py --email your@email.com`
+
+You can also use env vars:
+
+1. `GARMIN_EMAIL`
+2. `GARMIN_PASSWORD`
+3. `GARMINTOKENS`
+
+Useful options:
+
+1. `--skip-generate`
+2. `--skip-upload`
+3. `--max-tcx 100`
+
+Important limitation:
+
+Garmin's activity file upload API supports FIT/GPX/TCX uploads. The daily Fitbit-style CSV import flow (used by `activities-export-*.csv`) is a separate web import path and is not exposed by the API client used here.
+
 
 ## Warning
 
