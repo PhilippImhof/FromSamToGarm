@@ -2,6 +2,7 @@
 
 import csv
 import glob
+import os
 from typing import Dict, List
 
 
@@ -11,18 +12,25 @@ def fetch_weight_data() -> List[Dict[str, float]]:
     a CSV file. Return a list of dicts, one dict per dataset.
     """
 
-    weight_files = glob.glob("com.samsung.health.weight.*.csv")
+    # Samsung Health exports place CSVs in nested folders, so search recursively.
+    weight_files = sorted(
+        glob.glob(
+            "samsunghealth*/**/com.samsung.health.weight.*.csv", recursive=True
+        )
+    )
     if len(weight_files) == 0:
         raise Exception("No weight data found.")
-    filename = weight_files[0]
+    filename = weight_files[-1]
 
     weight_data = []
     with open(filename, newline="") as f:
         next(f)
         reader = csv.DictReader(f)
         for row in reader:
+
             weight = float(row["weight"])
-            height = float(row["height"])
+                
+
             # If body fat is recorded, we will include it. However, Garmin Connect
             # will not show it.
             try:
@@ -34,8 +42,8 @@ def fetch_weight_data() -> List[Dict[str, float]]:
                 {
                     "Date": row["start_time"][0:10],
                     "Weight": weight,
-                    "Height": height,
-                    "BMI": round(weight / ((height / 100) ** 2), 2),
+                    "Height": 179.0,
+                    "BMI": round(weight / ((179.0 / 100) ** 2), 2),
                     "Fat": round(fat_mass / weight * 100, 1),
                 }
             )
@@ -50,13 +58,17 @@ def write_to_file(weight_data: List[Dict[str, float]]) -> None:
     below 4 KB seems to be fine.
     """
     LINES_PER_FILE = 75
+    export_dir = "exports"
+    os.makedirs(export_dir, exist_ok=True)
 
     dest = None
     lines_written = 0
     columns = list(weight_data[0].keys())
     for wd in weight_data:
         if lines_written % LINES_PER_FILE == 0:
-            filename = f"weight-export-{lines_written // LINES_PER_FILE + 1}.csv"
+            filename = os.path.join(
+                export_dir, f"weight-export-{lines_written // LINES_PER_FILE + 1}.csv"
+            )
             if hasattr(dest, "close"):
                 dest.close()
 

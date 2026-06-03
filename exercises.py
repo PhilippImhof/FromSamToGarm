@@ -18,6 +18,12 @@ nsmap = {
     "xsi": "http://www.w3.org/2001/XMLSchema-instance",
 }
 
+EXPORT_ROOT = "."
+
+# Garmin TCX supports only Running, Biking or Other for Activity@Sport.
+RUNNING_TYPES = {"1001", "1002", "13001", "13003", "15005"}
+BIKING_TYPES = {"11007", "13004", "15003"}
+
 # Return the right qualified name for a given name space.
 def ns3_tag(name):
     return XML.QName(nsmap["ns3"], name)
@@ -30,10 +36,18 @@ def fetch_exercise_list():
     The list also tells us, whether there is live data (e.g. heart rate) and/or location data
     available.
     """
-    exercise_files = glob.glob("com.samsung.shealth.exercise.*.csv")
+    exercise_files = sorted(
+        glob.glob(
+            "samsunghealth*/**/com.samsung.shealth.exercise.[0-9]*.csv",
+            recursive=True,
+        )
+    )
     if len(exercise_files) == 0:
         raise Exception("No exercise data found.")
-    filename = exercise_files[0]
+    filename = exercise_files[-1]
+
+    global EXPORT_ROOT
+    EXPORT_ROOT = os.path.dirname(filename)
 
     prefix = "com.samsung.health.exercise."
     fields = [
@@ -74,7 +88,13 @@ def fetch_live_data(uuid):
     The data is stored in JSON format.
     """
     subdir = uuid[0]
-    filename = f"jsons/com.samsung.shealth.exercise/{subdir}/{uuid}.com.samsung.health.exercise.live_data.json"
+    filename = os.path.join(
+        EXPORT_ROOT,
+        "jsons",
+        "com.samsung.shealth.exercise",
+        subdir,
+        f"{uuid}.com.samsung.health.exercise.live_data.json",
+    )
     with open(filename) as f:
         live_data = json.load(f)
 
@@ -87,7 +107,13 @@ def fetch_location_data(uuid):
     The data is stored in JSON format.
     """
     subdir = uuid[0]
-    filename = f"jsons/com.samsung.shealth.exercise/{subdir}/{uuid}.com.samsung.health.exercise.location_data.json"
+    filename = os.path.join(
+        EXPORT_ROOT,
+        "jsons",
+        "com.samsung.shealth.exercise",
+        subdir,
+        f"{uuid}.com.samsung.health.exercise.location_data.json",
+    )
     with open(filename) as f:
         location_data = json.load(f)
 
@@ -174,7 +200,7 @@ def create_trackpoint(data):
     """
     trackpoint = XML.Element("Trackpoint")
     XML.SubElement(trackpoint, "Time").text = data["time"]
-    if data.get("altitude") and data.get("longitude"):
+    if data.get("latitude") is not None and data.get("longitude") is not None:
         position = XML.SubElement(trackpoint, "Position")
         XML.SubElement(position, "LatitudeDegrees").text = str(data["latitude"])
         XML.SubElement(position, "LongitudeDegrees").text = str(data["longitude"])
@@ -265,15 +291,38 @@ def convert_activity_type(stype):
     Although Garmin Connect has a wide range of very specific activity types, we can only use
     "Running", "Biking" or "Other" in a TCX file.
 
-    The corresponding types used in Samsung Health are 1002 (running) and 11007 (cycling). For
-    a complete list of all exercise types, see:
+    Samsung has many exercise types. We map common locomotion types to Running and
+    cycling-related types to Biking. For a complete list, see:
     https://developer.samsung.com/health/android/data/api-reference/EXERCISE_TYPE.html
     """
-    if stype == "1002":
+    if stype in RUNNING_TYPES:
         return "Running"
-    if stype == "11007":
+    if stype in BIKING_TYPES:
         return "Biking"
     return "Other"
+
+
+def resolve_distance(exercise_distance, merged_data):
+    """Return distance in meters, with fallback to live data when summary distance is missing."""
+    try:
+        distance = float(exercise_distance)
+        if distance > 0:
+            return str(distance)
+    except (TypeError, ValueError):
+        pass
+
+    max_distance = 0
+    for entry in merged_data.values():
+        try:
+            value = float(entry.get("distance", 0) or 0)
+            if value > max_distance:
+                max_distance = value
+        except (TypeError, ValueError):
+            continue
+
+    if max_distance > 0:
+        return str(max_distance)
+    return ""
 
 
 def find_nearest_time(ts, data):
@@ -376,10 +425,21 @@ def prepare_exercise_data(exercise):
     time = exercise["start_time"].replace(" ", "T") + "Z"
     ex_type = convert_activity_type(exercise["exercise_type"])
 
+    live_data = []
+    if exercise["live_data"] and exercise["datauuid"]:
+        live_data = fetch_live_data(exercise["datauuid"])
+
+    location_data = []
+    if exercise["location_data"] and exercise["datauuid"]:
+        location_data = fetch_location_data(exercise["datauuid"])
+
+    data = merge_location_and_live_data(location_data, live_data)
+    distance = resolve_distance(exercise["distance"], data)
+
     lap = create_lap(
         time,
         exercise["duration"],
-        exercise["distance"],
+        distance,
         exercise["total_calorie"],
         exercise["mean_heart_rate"],
         exercise["max_heart_rate"],
@@ -389,15 +449,6 @@ def prepare_exercise_data(exercise):
         exercise["max_cadence"],
     )
 
-    live_data = []
-    if ex["live_data"]:
-        live_data = fetch_live_data(ex["datauuid"])
-
-    location_data = []
-    if ex["location_data"]:
-        location_data = fetch_location_data(ex["datauuid"])
-
-    data = merge_location_and_live_data(location_data, live_data)
     trackpoints = []
     for d in data:
         trackpoints.append(create_trackpoint(data[d]))
@@ -415,8 +466,8 @@ def write_to_file(filename, xml):
 
 # We will generate quite a bunch of files, so it is better to have them all in one
 # subdir.
-if not os.path.isdir("exports"):
-    os.makedirs("exports")
+EXPORT_DIR = "exports"
+os.makedirs(EXPORT_DIR, exist_ok=True)
 
 print("Fetching exercises...", end="")
 exercises = fetch_exercise_list()
@@ -426,6 +477,9 @@ for ex in exercises:
     print(".", end="", flush=True)
     xml = prepare_exercise_data(ex)
     date_code = ex["start_time"][0:10]
-    write_to_file(f"exports/{ex['exercise_type']}_{date_code}_{ex['datauuid']}.tcx", xml)
+    filename = os.path.join(
+        EXPORT_DIR, f"{ex['exercise_type']}_{date_code}_{ex['datauuid']}.tcx"
+    )
+    write_to_file(filename, xml)
 
 print("done")

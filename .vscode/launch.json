@@ -1,0 +1,99 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Main: Generate Only (No Upload)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/main.py",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "args": [
+        "--skip-upload"
+      ]
+    },
+    {
+      "name": "Main: Upload Existing Exports",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/main.py",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "args": [
+        "--skip-generate",
+        "--email",
+        "${input:garminEmail}",
+        "--password",
+        "${input:garminPassword}",
+        "--tokenstore",
+        "${input:garminTokenstore}",
+        "--max-tcx",
+        "${input:maxTcx}"
+      ]
+    },
+    {
+      "name": "Main: Full Run (Generate + Upload)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/main.py",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "args": [
+        "--email",
+        "${input:garminEmail}",
+        "--password",
+        "${input:garminPassword}",
+        "--tokenstore",
+        "${input:garminTokenstore}",
+        "--max-tcx",
+        "${input:maxTcx}"
+      ]
+    },
+    {
+      "name": "Main: Full Run (Allow Duplicate Weigh-ins)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/main.py",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "args": [
+        "--email",
+        "${input:garminEmail}",
+        "--password",
+        "${input:garminPassword}",
+        "--tokenstore",
+        "${input:garminTokenstore}",
+        "--max-tcx",
+        "${input:maxTcx}",
+        "--allow-duplicate-weigh-ins"
+      ]
+    }
+  ],
+  "inputs": [
+    {
+      "id": "garminEmail",
+      "type": "promptString",
+      "description": "Garmin email (or leave empty to use GARMIN_EMAIL env var)",
+      "default": "${env:GARMIN_EMAIL}"
+    },
+    {
+      "id": "garminPassword",
+      "type": "promptString",
+      "description": "Garmin password (or leave empty to use GARMIN_PASSWORD / getpass prompt)",
+      "password": true,
+      "default": "${env:GARMIN_PASSWORD}"
+    },
+    {
+      "id": "garminTokenstore",
+      "type": "promptString",
+      "description": "Token file path",
+      "default": ".garmin_tokens"
+    },
+    {
+      "id": "maxTcx",
+      "type": "promptString",
+      "description": "Max TCX uploads (0 = all)",
+      "default": "0"
+    }
+  ]
+}

@@ -4,6 +4,27 @@
 import csv
 import datetime
 import glob
+import os
+
+
+def parse_day_time(value):
+    """Parse Samsung Health day_time values from multiple export formats."""
+    value = str(value).strip()
+
+    # Newer exports often use epoch milliseconds.
+    try:
+        return datetime.datetime.fromtimestamp(int(value) / 1000).strftime("%Y-%m-%d")
+    except ValueError:
+        pass
+
+    # Some exports use ISO-like datetime strings.
+    for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        try:
+            return datetime.datetime.strptime(value, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+
+    raise ValueError(f"Unsupported day_time format: {value}")
 
 
 def fetch_floor_data():
@@ -12,10 +33,15 @@ def fetch_floor_data():
     because floors climbed seem to be stored whenever they are registered. So we have to group
     them all and add them up.
     """
-    floor_files = glob.glob("com.samsung.health.floors_climbed.*.csv")
+    floor_files = sorted(
+        glob.glob(
+            "samsunghealth*/**/com.samsung.health.floors_climbed.*.csv",
+            recursive=True,
+        )
+    )
     if len(floor_files) == 0:
         raise Exception("No floors data found.")
-    filename = floor_files[0]
+    filename = floor_files[-1]
 
     with open(filename, newline="") as floor_data:
         # Skip first line
@@ -40,10 +66,15 @@ def fetch_calorie_data():
     Fetch the calorie data.
     """
 
-    calorie_files = glob.glob("com.samsung.shealth.calories_burned.details.*.csv")
+    calorie_files = sorted(
+        glob.glob(
+            "samsunghealth*/**/com.samsung.shealth.calories_burned.details.*.csv",
+            recursive=True,
+        )
+    )
     if len(calorie_files) == 0:
         raise Exception("No calorie data found.")
-    filename = calorie_files[0]
+    filename = calorie_files[-1]
 
     with open(filename, newline="") as calories_data:
         # Skip first line
@@ -52,9 +83,7 @@ def fetch_calorie_data():
         calorie_data = {}
         prefix = "com.samsung.shealth.calories_burned."
         for row in reader:
-            date = datetime.datetime.fromtimestamp(
-                int(row[prefix + "day_time"]) / 1000
-            ).strftime("%Y-%m-%d")
+            date = parse_day_time(row[prefix + "day_time"])
             rest_calorie = float(row[prefix + "rest_calorie"])
             active_calorie = float(row[prefix + "active_calorie"])
             calorie_data[date] = int(round(rest_calorie + active_calorie, 0))
@@ -67,10 +96,15 @@ def fetch_activity_data():
     Fetch the activity data.
     """
 
-    activity_files = glob.glob("com.samsung.shealth.activity.day_summary.*.csv")
+    activity_files = sorted(
+        glob.glob(
+            "samsunghealth*/**/com.samsung.shealth.activity.day_summary.*.csv",
+            recursive=True,
+        )
+    )
     if len(activity_files) == 0:
         raise Exception("No activity data found.")
-    filename = activity_files[0]
+    filename = activity_files[-1]
 
     with open(filename, newline="") as activity_data:
         # Skip first line
@@ -78,9 +112,7 @@ def fetch_activity_data():
         reader = csv.DictReader(activity_data)
         activity_data = {}
         for row in reader:
-            date = datetime.datetime.fromtimestamp(
-                int(row["day_time"]) / 1000
-            ).strftime("%Y-%m-%d")
+            date = parse_day_time(row["day_time"])
             step_count = int(row["step_count"])
             # Samsung Health stores the distance in m, Garmin Connect expects it to be in km.
             distance = round(float(row["distance"]) / 1000, 2)
@@ -109,7 +141,7 @@ def merge_data(floors, calories, activities):
 
     for date, f in floors.items():
         if date not in merged_data:
-            merged_data[date]["Calories"] = 0
+            merged_data[date] = {"Calories Burned": 0}
         merged_data[date]["Floors"] = f
 
     for date, dic in activities.items():
@@ -125,6 +157,21 @@ def merge_data(floors, calories, activities):
         else:
             merged_data[date] = dic
 
+    # Ensure all required columns exist to avoid empty CSV fields.
+    for date in merged_data:
+        row = merged_data[date]
+        merged_data[date] = {
+            "Calories Burned": int(row.get("Calories Burned", 0) or 0),
+            "Steps": int(row.get("Steps", 0) or 0),
+            "Distance": round(float(row.get("Distance", 0) or 0), 2),
+            "Floors": int(row.get("Floors", 0) or 0),
+            "Minutes Sedentary": int(row.get("Minutes Sedentary", 0) or 0),
+            "Minutes Lightly Active": int(row.get("Minutes Lightly Active", 0) or 0),
+            "Minutes Fairly Active": int(row.get("Minutes Fairly Active", 0) or 0),
+            "Minutes Very Active": int(row.get("Minutes Very Active", 0) or 0),
+            "Activity Calories": int(row.get("Activity Calories", 0) or 0),
+        }
+
     return dict(sorted(merged_data.items()))
 
 
@@ -137,6 +184,8 @@ def write_to_file(data):
           back in time, you can easily check if your data is there or not.
     """
     LINES_PER_FILE = 100
+    export_dir = "exports"
+    os.makedirs(export_dir, exist_ok=True)
 
     dest = None
     lines_written = 0
@@ -156,14 +205,20 @@ def write_to_file(data):
         # Add the date key to the row.
         data[d]["Date"] = d
         if lines_written % LINES_PER_FILE == 0:
-            filename = f"activities-export-{lines_written // LINES_PER_FILE + 1}.csv"
+            filename = os.path.join(
+                export_dir,
+                f"activities-export-{lines_written // LINES_PER_FILE + 1}.csv",
+            )
             if hasattr(dest, "close"):
                 dest.close()
 
             dest = open(filename, "w", newline="")
             dest.write("Activities\n")
             writer = csv.DictWriter(
-                dest, fieldnames=columns, lineterminator="\n", quoting=csv.QUOTE_ALL
+                dest,
+                fieldnames=columns,
+                lineterminator="\n",
+                quoting=csv.QUOTE_MINIMAL,
             )
             writer.writeheader()
 
