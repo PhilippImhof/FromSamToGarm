@@ -24,45 +24,48 @@ def ns3_tag(name):
 
 
 def fetch_exercise_list():
-    """
-    Fetch the list of exercises from Samsung's CSV file. The file contains general
-    data about each exercise, like the date and time, the calories burned or the duration.
-    The list also tells us, whether there is live data (e.g. heart rate) and/or location data
-    available.
-    """
-    exercise_files = glob.glob("com.samsung.shealth.exercise.*.csv")
+    exercise_files = glob.glob("com.samsung.shealth.exercise.20*.csv")
     if len(exercise_files) == 0:
         raise Exception("No exercise data found.")
     filename = exercise_files[0]
 
     prefix = "com.samsung.health.exercise."
-    fields = [
-        prefix + "datauuid",
-        prefix + "start_time",
-        "total_calorie",
-        prefix + "duration",
-        prefix + "exercise_type",
-        "heart_rate_sample_count",
-        prefix + "mean_heart_rate",
-        prefix + "max_heart_rate",
-        prefix + "min_heart_rate",
-        prefix + "mean_speed",
-        prefix + "max_speed",
-        prefix + "mean_cadence",
-        prefix + "max_cadence",
-        prefix + "distance",
-        prefix + "location_data",
-        prefix + "live_data",
+
+    # All these fields use the full prefix in this export
+    prefixed_fields = [
+        "datauuid",
+        "start_time",
+        "duration",
+        "exercise_type",
+        "mean_heart_rate",
+        "max_heart_rate",
+        "min_heart_rate",
+        "mean_speed",
+        "max_speed",
+        "mean_cadence",
+        "max_cadence",
+        "distance",
+        "location_data",
+        "live_data",
     ]
-    with open(filename, newline="") as exercise_list:
-        # Skip first line
-        next(exercise_list)
+
+    # These appear without prefix
+    bare_fields = {
+        "total_calorie": "total_calorie",
+        "heart_rate_sample_count": "heart_rate_sample_count",
+    }
+
+    # Open with utf-8-sig to strip the BOM
+    with open(filename, newline="", encoding="utf-8-sig") as exercise_list:
+        next(exercise_list)  # skip metadata line
         reader = csv.DictReader(exercise_list)
         data = []
         for row in reader:
             dataset = {}
-            for f in fields:
-                dataset[f.replace(prefix, "")] = row[f]
+            for f in prefixed_fields:
+                dataset[f] = row.get(prefix + f, "")
+            for src, dest in bare_fields.items():
+                dataset[dest] = row.get(src, "")
             data.append(dataset)
 
         return data
@@ -366,13 +369,6 @@ def merge_location_and_live_data(locationdata, livedata):
 
 
 def prepare_exercise_data(exercise):
-    """
-    Fetch and merge the data for the given exercise and create proper XML.
-    """
-
-    # The time code is used as the Id and StartTime for the lap. It is almost in the right format,
-    # we just need to add the T separator between the date and the time and append a Z for the UTC
-    # time zone.
     time = exercise["start_time"].replace(" ", "T") + "Z"
     ex_type = convert_activity_type(exercise["exercise_type"])
 
@@ -390,12 +386,21 @@ def prepare_exercise_data(exercise):
     )
 
     live_data = []
-    if ex["live_data"]:
-        live_data = fetch_live_data(ex["datauuid"])
+    live_data_val = exercise.get("live_data", "").strip()
+    # Value is either a filename, "0", or empty — treat anything with a UUID as present
+    if live_data_val and live_data_val != "0":
+        try:
+            live_data = fetch_live_data(exercise["datauuid"])
+        except Exception:
+            pass
 
     location_data = []
-    if ex["location_data"]:
-        location_data = fetch_location_data(ex["datauuid"])
+    location_data_val = exercise.get("location_data", "").strip()
+    if location_data_val and location_data_val != "0":
+        try:
+            location_data = fetch_location_data(exercise["datauuid"])
+        except Exception:
+            pass
 
     data = merge_location_and_live_data(location_data, live_data)
     trackpoints = []
@@ -415,6 +420,8 @@ def write_to_file(filename, xml):
 
 # We will generate quite a bunch of files, so it is better to have them all in one
 # subdir.
+# We will generate quite a bunch of files, so it is better to have them all in one
+# subdir.
 if not os.path.isdir("exports"):
     os.makedirs("exports")
 
@@ -422,10 +429,15 @@ print("Fetching exercises...", end="")
 exercises = fetch_exercise_list()
 print(f"done. Found {len(exercises)} exercises.")
 print("Preparing individual TCX files", end="")
+skipped = 0
 for ex in exercises:
-    print(".", end="", flush=True)
-    xml = prepare_exercise_data(ex)
-    date_code = ex["start_time"][0:10]
-    write_to_file(f"exports/{ex['exercise_type']}_{date_code}_{ex['datauuid']}.tcx", xml)
+    try:
+        print(".", end="", flush=True)
+        xml = prepare_exercise_data(ex)
+        date_code = ex["start_time"][0:10]
+        write_to_file(f"exports/{ex['exercise_type']}_{date_code}_{ex['datauuid']}.tcx", xml)
+    except Exception as e:
+        skipped += 1
+        print(f"\nSkipped {ex.get('datauuid','?')} ({ex.get('start_time','?')}): {e}")
 
-print("done")
+print(f"\ndone. Skipped {skipped} exercises.")

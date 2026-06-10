@@ -17,26 +17,39 @@ def fetch_weight_data() -> List[Dict[str, float]]:
     filename = weight_files[0]
 
     weight_data = []
+    last_known_height = None
     with open(filename, newline="") as f:
         next(f)
         reader = csv.DictReader(f)
         for row in reader:
-            weight = float(row["weight"])
-            height = float(row["height"])
-            # If body fat is recorded, we will include it. However, Garmin Connect
-            # will not show it.
+            try:
+                weight = float(row["weight"])
+            except ValueError:
+                continue  # skip rows with no weight
+
+            # Use height from this row, or fall back to last known height
+            try:
+                height = float(row["height"])
+                if height > 0:
+                    last_known_height = height
+            except ValueError:
+                height = last_known_height
+
             try:
                 fat_mass = float(row["body_fat_mass"])
             except ValueError:
                 fat_mass = 0
 
+            bmi = round(weight / ((height / 100) ** 2), 2) if height else 0
+            fat_pct = round(fat_mass / weight * 100, 1) if fat_mass else 0
+
             weight_data.append(
                 {
                     "Date": row["start_time"][0:10],
                     "Weight": weight,
-                    "Height": height,
-                    "BMI": round(weight / ((height / 100) ** 2), 2),
-                    "Fat": round(fat_mass / weight * 100, 1),
+                    "Height": height if height else 0,
+                    "BMI": bmi,
+                    "Fat": fat_pct,
                 }
             )
 

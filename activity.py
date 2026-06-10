@@ -63,35 +63,32 @@ def fetch_calorie_data():
 
 
 def fetch_activity_data():
-    """
-    Fetch the activity data.
-    """
-
     activity_files = glob.glob("com.samsung.shealth.activity.day_summary.*.csv")
     if len(activity_files) == 0:
         raise Exception("No activity data found.")
     filename = activity_files[0]
 
     with open(filename, newline="") as activity_data:
-        # Skip first line
         next(activity_data)
         reader = csv.DictReader(activity_data)
         activity_data = {}
         for row in reader:
-            date = datetime.datetime.fromtimestamp(
-                int(row["day_time"]) / 1000
-            ).strftime("%Y-%m-%d")
+            # Handle both Unix ms timestamps and human-readable datetime strings
+            raw = row["day_time"].strip()
+            try:
+                date = datetime.datetime.fromtimestamp(int(raw) / 1000).strftime("%Y-%m-%d")
+            except ValueError:
+                date = raw[0:10]
+
             step_count = int(row["step_count"])
-            # Samsung Health stores the distance in m, Garmin Connect expects it to be in km.
             distance = round(float(row["distance"]) / 1000, 2)
             calorie = float(row["calorie"])
-            # Times are stored in milliseconds.
             run_time = int(row["run_time"]) / 60000
             walk_time = int(row["walk_time"]) / 60000
             activity_data[date] = {
                 "Steps": step_count,
                 "Distance": distance,
-                "Minutes Sedentary": 0,  # We set this to zero, because Garmin won't show it anyway.
+                "Minutes Sedentary": 0,
                 "Minutes Lightly Active": int(walk_time),
                 "Minutes Fairly Active": 0,
                 "Minutes Very Active": int(run_time),
@@ -109,13 +106,10 @@ def merge_data(floors, calories, activities):
 
     for date, f in floors.items():
         if date not in merged_data:
-            merged_data[date]["Calories"] = 0
+            merged_data[date] = {"Calories Burned": 0}  # was missing, create entry first
         merged_data[date]["Floors"] = f
 
     for date, dic in activities.items():
-        # If no steps have been recorded for a given date, we can drop that entry entirely,
-        # because that means other data will not be useful anyway: no activity calories, no distance
-        # no intensity minutes.
         dropkey = dic["Steps"] == 0
         if date in merged_data:
             if dropkey:
@@ -123,19 +117,13 @@ def merge_data(floors, calories, activities):
             else:
                 merged_data[date].update(dic)
         else:
-            merged_data[date] = dic
+            if not dropkey:
+                merged_data[date] = dic
 
     return dict(sorted(merged_data.items()))
 
 
 def write_to_file(data):
-    """
-    Write the data to a series of CSV files. We can only store a certain number of lines per file,
-    because if the files become too large, Garmin Connect will fail importing them.
-    Note: Garmin Connect might still show an error message. This does not mean the import failed.
-          Please check your data. The CSV files generated will be sorted by date, so when you go
-          back in time, you can easily check if your data is there or not.
-    """
     LINES_PER_FILE = 100
 
     dest = None
@@ -153,8 +141,12 @@ def write_to_file(data):
         "Activity Calories",
     ]
     for d in data:
-        # Add the date key to the row.
         data[d]["Date"] = d
+        # Default any missing fields to 0 to avoid empty cells
+        for col in columns:
+            if col not in data[d] or data[d][col] == "" or data[d][col] is None:
+                data[d][col] = 0
+
         if lines_written % LINES_PER_FILE == 0:
             filename = f"activities-export-{lines_written // LINES_PER_FILE + 1}.csv"
             if hasattr(dest, "close"):
